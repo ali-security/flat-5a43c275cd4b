@@ -504,6 +504,162 @@ suite('Unflatten', function () {
     })
   })
 
+  suite('.arrayLimit', function () {
+    test('Should not create huge sparse arrays from large numeric keys', function () {
+      const unflattened = unflatten({
+        'a.4294967294': 'foo'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert.deepStrictEqual(unflattened, {
+        a: { 4294967294: 'foo' }
+      })
+    })
+
+    test('Should not create huge sparse arrays from large nested numeric keys', function () {
+      const unflattened = unflatten({
+        'a.b.4294967294.c': 'foo'
+      })
+      assert(!Array.isArray(unflattened.a.b))
+      assert.deepStrictEqual(unflattened, {
+        a: { b: { 4294967294: { c: 'foo' } } }
+      })
+    })
+
+    test('Should keep the original key for large non-canonical numeric keys', function () {
+      const unflattened = unflatten({
+        'a.1e9': 'foo'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert.deepStrictEqual(unflattened, {
+        a: { '1e9': 'foo' }
+      })
+    })
+
+    test('Should not grow an existing array to a huge length', function () {
+      const unflattened = unflatten({
+        'a.0': 'foo',
+        'a.4294967294': 'bar'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert.deepStrictEqual(unflattened, {
+        a: { 0: 'foo', 4294967294: 'bar' }
+      })
+    })
+
+    test('Should not grow an existing array to a huge length when nested', function () {
+      const unflattened = unflatten({
+        'a.0.b': 'foo',
+        'a.4294967294.c': 'bar'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert.deepStrictEqual(unflattened, {
+        a: { 0: { b: 'foo' }, 4294967294: { c: 'bar' } }
+      })
+    })
+
+    test('Should not grow an empty input array to a huge length', function () {
+      const unflattened = unflatten({
+        a: [],
+        'a.4294967294': 'foo'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert.deepStrictEqual(unflattened, {
+        a: { 4294967294: 'foo' }
+      })
+
+      const unflattenedObject = unflatten({
+        a: [],
+        'a.4294967294': 'foo'
+      }, {
+        object: true
+      })
+      assert(!Array.isArray(unflattenedObject.a))
+      assert.deepStrictEqual(unflattenedObject, {
+        a: { 4294967294: 'foo' }
+      })
+    })
+
+    test('Should keep iteration and serialization bounded', function () {
+      const unflattened = unflatten({
+        'a.0': 'foo',
+        'a.4294967294': 'bar',
+        'b.4294967294': 'baz',
+        'c.1000': 'qux',
+        'c.2001': 'quux',
+        'c.4294967294': 'corge',
+        'd.4294967294.0': 'grault'
+      })
+      assert(!Array.isArray(unflattened.a))
+      assert(!Array.isArray(unflattened.b))
+      assert(!Array.isArray(unflattened.c))
+      assert(!Array.isArray(unflattened.d))
+      assert.deepStrictEqual(unflattened.d, { 4294967294: ['grault'] })
+      assert(JSON.stringify(unflattened).length < 1000)
+    })
+
+    test('Should only let arrays grow by arrayLimit per key', function () {
+      const unflattened = unflatten({
+        'a.1000': 'foo',
+        'a.2001': 'bar',
+        'b.1000': 'foo',
+        'b.2002': 'bar'
+      })
+      assert(Array.isArray(unflattened.a))
+      assert.strictEqual(unflattened.a.length, 2002)
+      assert.strictEqual(unflattened.a[1000], 'foo')
+      assert.strictEqual(unflattened.a[2001], 'bar')
+      assert(!Array.isArray(unflattened.b))
+      assert.deepStrictEqual(unflattened.b, { 1000: 'foo', 2002: 'bar' })
+    })
+
+    test('Should still unflatten large dense arrays', function () {
+      const list = []
+      for (let i = 0; i < 2500; i++) {
+        list.push({ value: i })
+      }
+      const unflattened = unflatten(flatten({ list: list }))
+      assert(Array.isArray(unflattened.list))
+      assert.strictEqual(unflattened.list.length, 2500)
+      assert.deepStrictEqual(unflattened, { list: list })
+    })
+
+    test('Should still create arrays for indices within the limit', function () {
+      const unflattened = unflatten({
+        'a.1000': 'foo'
+      })
+      assert(Array.isArray(unflattened.a))
+      assert.strictEqual(unflattened.a.length, 1001)
+      assert.strictEqual(unflattened.a[1000], 'foo')
+    })
+
+    test('Should respect a custom arrayLimit', function () {
+      assert.deepStrictEqual(unflatten({
+        'a.5': 'foo'
+      }, {
+        arrayLimit: 2
+      }), {
+        a: { 5: 'foo' }
+      })
+
+      assert.deepStrictEqual(unflatten({
+        'a.0': 'foo',
+        'a.4': 'bar'
+      }, {
+        arrayLimit: 2
+      }), {
+        a: { 0: 'foo', 4: 'bar' }
+      })
+
+      const unflattened = unflatten({
+        'a.4000': 'foo'
+      }, {
+        arrayLimit: 5000
+      })
+      assert(Array.isArray(unflattened.a))
+      assert.strictEqual(unflattened.a.length, 4001)
+    })
+  })
+
   if (typeof Buffer !== 'undefined') {
     test('Buffer', function () {
       assert.deepStrictEqual(unflatten({
